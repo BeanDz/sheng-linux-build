@@ -2,7 +2,7 @@ name: Build Kernel Bundle
 
 on:
   workflow_run:
-    workflows: ["Build Kernel"]   # HARUS sama dengan "name" di build.yml
+    workflows: ["Build Kernel"]
     types:
       - completed
 
@@ -23,7 +23,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 智能判断版本号
+    # 1. 智能判断版本号
     - name: Determine Kernel Version
       id: set_version
       run: |
@@ -33,41 +33,69 @@ jobs:
           echo "VERSION=7.1" >> $GITHUB_ENV
         fi
 
-    - name: Download all source releases from Xiaomi-pad-6s-pro-Linux
+    # 2. 安装格式转换神器 FPM
+    - name: Install FPM & Dependencies
+      run: |
+        echo "🛠️ 正在安装包管理转换工具 (FPM)..."
+        sudo apt-get update -y
+        sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm bsdtar
+        sudo gem install fpm
+
+    # 3. 仅下载现有的 .deb 文件
+    - name: Download DEB releases from upstream
       run: |
         mkdir bundle && cd bundle
 
-        echo "⬇️ 从目标仓库下载 kernel packages..."
+        echo "⬇️ 从目标仓库下载 kernel (.deb)..."
         gh release download "kernel-${{ env.VERSION }}" \
-          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --pattern "*.deb" \
           --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
           --clobber || true
 
-        echo "⬇️ 从目标仓库下载 sheng_devauth..."
+        echo "⬇️ 从目标仓库下载 sheng_devauth (.deb)..."
         gh release download "sheng_devauth" \
-          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --pattern "*.deb" \
           --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
           --clobber || true
 
-        echo "⬇️ 从目标仓库下载 sensor..."
+        echo "⬇️ 从目标仓库下载 sensor (.deb)..."
         gh release download "sensor" \
-          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --pattern "*.deb" \
           --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
           --clobber || true
 
-        echo "📂 最终打包的文件列表:"
-        ls -lah
-
-        # 检查是否下载到了足够的包
-        COUNT=$(ls *.{deb,rpm,zst} 2>/dev/null | wc -l)
+        # 检查是否下载成功
+        COUNT=$(ls *.deb 2>/dev/null | wc -l)
         if [ "$COUNT" -lt 5 ]; then
-          echo "❌ 下载的包数量不足！当前数量: $COUNT"
+          echo "❌ 下载的 .deb 包数量不足！当前数量: $COUNT"
           exit 1
         fi
 
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Convert DEB to RPM and Arch Linux packages
+      run: |
+        cd bundle
+        echo "🔄 开始将 .deb 转换为 .rpm 和 .pkg.tar.zst..."
+
+        # 遍历当前目录下所有的 .deb 文件
+        for deb_file in *.deb; do
+          if [ -f "$deb_file" ]; then
+            echo "👉 正在转换: $deb_file"
+            
+            # 使用 FPM 将 deb 转换为 Fedora 的 rpm
+            fpm -s deb -t rpm "$deb_file"
+            
+            # 使用 FPM 将 deb 转换为 Arch 的 pacman 包
+            fpm -s deb -t pacman "$deb_file"
+          fi
+        done
+
+        echo "✅ 所有格式转换完成！最终产物列表："
+        ls -lah
+
+    # 5. 打包发布全平台 Bundle
     - name: Create bundle release
       uses: softprops/action-gh-release@v1
       with:
