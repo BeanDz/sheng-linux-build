@@ -39,7 +39,28 @@ jobs:
       - run: sudo apt update && sudo apt install -y libarchive-tools p7zip-full curl wget android-sdk-libsparse-utils
       - name: Download Native Arch Packages
         run: |
-          gh release download "kernel-bundle-${{ github.event.inputs.kernel_version || '7.1' }}" --pattern "*.pkg.tar.zst" --repo "BeanDz/sheng-linux-build" --clobber || true
+          set -euo pipefail
+          gh release download "kernel-bundle-${{ github.event.inputs.kernel_version || '7.1' }}" --pattern "*.pkg.tar.zst" --repo "BeanDz/sheng-linux-build" --clobber
+          echo "Downloaded Arch driver packages:"
+          ls -lh *.pkg.tar.zst
+          expected_patterns=(
+            "alsa-xiaomi-sheng-*-aarch64.pkg.tar.zst"
+            "firmware-xiaomi-sheng-*-aarch64.pkg.tar.zst"
+            "linux-xiaomi-sheng-*-aarch64.pkg.tar.zst"
+            "sheng-devauth-*-aarch64.pkg.tar.zst"
+            "fastrpc-*-aarch64.pkg.tar.zst"
+            "iio-sensor-proxy-*-aarch64.pkg.tar.zst"
+            "libssc-*-aarch64.pkg.tar.zst"
+            "sheng-sensors-*-aarch64.pkg.tar.zst"
+          )
+          for pattern in "${expected_patterns[@]}"; do
+            if ! compgen -G "$pattern" > /dev/null; then
+              echo "::error::Missing Arch driver package matching: $pattern"
+              exit 1
+            fi
+            echo "Found Arch driver package matching: $pattern"
+          done
+          echo "All 8 Arch driver packages were downloaded."
           wget -q -O mesa-common-dev_26.0.7-1_arm64.deb "http://ftp.br.debian.org/debian/pool/main/m/mesa/mesa-common-dev_26.0.8-1_arm64.deb"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

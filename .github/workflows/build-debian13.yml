@@ -74,8 +74,29 @@ jobs:
       - run: sudo apt update && sudo apt install -y debootstrap libarchive-tools p7zip-full curl wget android-sdk-libsparse-utils
       - name: Download kernel bundle from Main Repo
         run: |
+          set -euo pipefail
           gh release download "kernel-bundle-${{ github.event.inputs.kernel_version || '7.1' }}" \
-            --pattern "*.deb" --repo "BeanDz/sheng-linux-build" --clobber || true
+            --pattern "*.deb" --repo "BeanDz/sheng-linux-build" --clobber
+          echo "Downloaded Debian driver packages:"
+          ls -lh *.deb
+          expected_packages=(
+            "alsa-xiaomi-sheng.deb"
+            "firmware-xiaomi-sheng.deb"
+            "linux-xiaomi-sheng.deb"
+            "sheng-devauth.deb"
+            "fastrpc_1.0.2-1_arm64.deb"
+            "iio-sensor-proxy_99993.8-6_arm64.deb"
+            "libssc_0.4.2-1_arm64.deb"
+            "sheng-sensors_20240917-1_arm64.deb"
+          )
+          for pkg in "${expected_packages[@]}"; do
+            if [ ! -f "$pkg" ]; then
+              echo "::error::Missing Debian driver package: $pkg"
+              exit 1
+            fi
+            echo "Found Debian driver package: $pkg"
+          done
+          echo "All 8 Debian driver packages were downloaded."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build RootFS

@@ -36,7 +36,28 @@ jobs:
       - run: sudo apt update && sudo apt install -y libarchive-tools p7zip-full curl wget android-sdk-libsparse-utils
       - name: Download Native Fedora Packages
         run: |
-          gh release download "kernel-bundle-${{ github.event.inputs.kernel_version || '7.1' }}" --pattern "*.rpm" --repo "BeanDz/sheng-linux-build" --clobber || true
+          set -euo pipefail
+          gh release download "kernel-bundle-${{ github.event.inputs.kernel_version || '7.1' }}" --pattern "*.rpm" --repo "BeanDz/sheng-linux-build" --clobber
+          echo "Downloaded Fedora driver packages:"
+          ls -lh *.rpm
+          expected_patterns=(
+            "alsa-xiaomi-sheng-*.aarch64.rpm"
+            "firmware-xiaomi-sheng-*.aarch64.rpm"
+            "linux-xiaomi-sheng-*.aarch64.rpm"
+            "sheng-devauth-*.aarch64.rpm"
+            "fastrpc-*.aarch64.rpm"
+            "iio-sensor-proxy-*.aarch64.rpm"
+            "libssc-*.aarch64.rpm"
+            "sheng-sensors-*.aarch64.rpm"
+          )
+          for pattern in "${expected_patterns[@]}"; do
+            if ! compgen -G "$pattern" > /dev/null; then
+              echo "::error::Missing Fedora driver package matching: $pattern"
+              exit 1
+            fi
+            echo "Found Fedora driver package matching: $pattern"
+          done
+          echo "All 8 Fedora driver packages were downloaded."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build RootFS
