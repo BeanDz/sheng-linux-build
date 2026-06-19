@@ -19,6 +19,62 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BOOTMODES=("$TARGET_MODE")
 FLAVOURS=("$TARGET_FLAVOUR")
 
+normalize_driver_layout() {
+    local fw_base="rootdir/lib/firmware"
+    local fw_dir src dst
+
+    mkdir -p "$fw_base"
+    for fw_dir in ath12k cirrus nanosic novatek qca qcom; do
+        src="rootdir/usr/lib/$fw_dir"
+        dst="$fw_base/$fw_dir"
+        if [ -d "$src" ]; then
+            mkdir -p "$dst"
+            cp -a "$src/." "$dst/"
+            rm -rf "$src"
+        fi
+    done
+
+    local ath12k_dir="$fw_base/ath12k/WCN7850/hw2.0"
+    if [ -f "$ath12k_dir/board-2.bin" ] && [ ! -f "$ath12k_dir/board.bin" ]; then
+        cp "$ath12k_dir/board-2.bin" "$ath12k_dir/board.bin"
+    fi
+}
+
+enable_driver_services() {
+    if [ -f rootdir/usr/lib/systemd/system/adsprpcd-sensorspd.service ]; then
+        chroot rootdir systemctl enable adsprpcd-sensorspd.service || true
+    fi
+    if [ -f rootdir/usr/lib/systemd/system/iio-sensor-proxy.service ]; then
+        mkdir -p rootdir/etc/systemd/system/multi-user.target.wants
+        ln -sf /usr/lib/systemd/system/iio-sensor-proxy.service \
+            rootdir/etc/systemd/system/multi-user.target.wants/iio-sensor-proxy.service
+    fi
+}
+
+repack_firmware_deb() {
+    local pkg="firmware-xiaomi-sheng.deb"
+    local workdir fw_dir src dst
+
+    [ -f "$pkg" ] || return 0
+    command -v dpkg-deb >/dev/null 2>&1 || return 0
+
+    workdir=$(mktemp -d)
+    dpkg-deb -R "$pkg" "$workdir/pkg"
+    mkdir -p "$workdir/pkg/lib/firmware"
+    for fw_dir in ath12k cirrus nanosic novatek qca qcom; do
+        src="$workdir/pkg/usr/lib/$fw_dir"
+        dst="$workdir/pkg/lib/firmware/$fw_dir"
+        if [ -d "$src" ]; then
+            mkdir -p "$dst"
+            cp -a "$src/." "$dst/"
+            rm -rf "$src"
+        fi
+    done
+    find "$workdir/pkg/usr/lib" -depth -type d -empty -delete 2>/dev/null || true
+    dpkg-deb -b "$workdir/pkg" "$pkg"
+    rm -rf "$workdir"
+}
+
 cleanup_mounts() {
     fuser -k -9 -m rootdir 2>/dev/null || true
     sleep 2; umount -l rootdir/dev/pts 2>/dev/null || true
@@ -52,9 +108,19 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         echo "LANG=zh_CN.UTF-8" > rootdir/etc/locale.conf
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y fonts-noto-cjk fonts-wqy-microhei fcitx5 fcitx5-chinese-addons"
 
-        cp *.deb rootdir/tmp/ 2>/dev/null || true
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools"
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb" || true
+        if ls *.deb 1> /dev/null 2>&1; then
+            repack_firmware_deb
+            cp *.deb rootdir/tmp/
+            chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools kmod qrtr-tools"
+            chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb"
+            normalize_driver_layout
+            enable_driver_services
+            KERNEL_MODULE_DIR=$(find rootdir/lib/modules rootdir/usr/lib/modules -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)
+            KERNEL_MODULE_DIR=${KERNEL_MODULE_DIR##*/}
+            if [ -n "$KERNEL_MODULE_DIR" ]; then
+                chroot rootdir /sbin/depmod -a "$KERNEL_MODULE_DIR"
+            fi
+        fi
         
         chroot rootdir bash -c "echo 'root:$CUSTOM_PASS' | chpasswd"
         echo "debian-$FLAVOUR-$MODE" > rootdir/etc/hostname
@@ -74,7 +140,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
             printf "[Autologin]\nUser=$CUSTOM_USER\nSession=plasma\n" > rootdir/etc/sddm.conf.d/autologin.conf
             chroot rootdir systemctl enable sddm
         fi
-        chroot rootdir systemctl enable NetworkManager
+        chroot rootdir systemctl enable NetworkManager qrtr-ns || true
         chroot rootdir systemctl set-default graphical.target
 
         [ "$MODE" = "dual" ] && echo "PARTLABEL=linux / ext4 defaults,noatime,errors=remount-ro 0 1" > rootdir/etc/fstab || echo "PARTLABEL=userdata / ext4 defaults,noatime,errors=remount-ro 0 1" > rootdir/etc/fstab

@@ -31,6 +31,62 @@ fi
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 ROOTFS_IMG="ubuntu26_${DESKTOP_ENV}_${IMG_SUFFIX}_${TIMESTAMP}.img"
 
+normalize_driver_layout() {
+    local fw_base="rootdir/lib/firmware"
+    local fw_dir src dst
+
+    mkdir -p "$fw_base"
+    for fw_dir in ath12k cirrus nanosic novatek qca qcom; do
+        src="rootdir/usr/lib/$fw_dir"
+        dst="$fw_base/$fw_dir"
+        if [ -d "$src" ]; then
+            mkdir -p "$dst"
+            cp -a "$src/." "$dst/"
+            rm -rf "$src"
+        fi
+    done
+
+    local ath12k_dir="$fw_base/ath12k/WCN7850/hw2.0"
+    if [ -f "$ath12k_dir/board-2.bin" ] && [ ! -f "$ath12k_dir/board.bin" ]; then
+        cp "$ath12k_dir/board-2.bin" "$ath12k_dir/board.bin"
+    fi
+}
+
+enable_driver_services() {
+    if [ -f rootdir/usr/lib/systemd/system/adsprpcd-sensorspd.service ]; then
+        chroot rootdir systemctl enable adsprpcd-sensorspd.service || true
+    fi
+    if [ -f rootdir/usr/lib/systemd/system/iio-sensor-proxy.service ]; then
+        mkdir -p rootdir/etc/systemd/system/multi-user.target.wants
+        ln -sf /usr/lib/systemd/system/iio-sensor-proxy.service \
+            rootdir/etc/systemd/system/multi-user.target.wants/iio-sensor-proxy.service
+    fi
+}
+
+repack_firmware_deb() {
+    local pkg="firmware-xiaomi-sheng.deb"
+    local workdir fw_dir src dst
+
+    [ -f "$pkg" ] || return 0
+    command -v dpkg-deb >/dev/null 2>&1 || return 0
+
+    workdir=$(mktemp -d)
+    dpkg-deb -R "$pkg" "$workdir/pkg"
+    mkdir -p "$workdir/pkg/lib/firmware"
+    for fw_dir in ath12k cirrus nanosic novatek qca qcom; do
+        src="$workdir/pkg/usr/lib/$fw_dir"
+        dst="$workdir/pkg/lib/firmware/$fw_dir"
+        if [ -d "$src" ]; then
+            mkdir -p "$dst"
+            cp -a "$src/." "$dst/"
+            rm -rf "$src"
+        fi
+    done
+    find "$workdir/pkg/usr/lib" -depth -type d -empty -delete 2>/dev/null || true
+    dpkg-deb -b "$workdir/pkg" "$pkg"
+    rm -rf "$workdir"
+}
+
 echo "开始构建 Ubuntu 26.04 | 桌面: $DESKTOP_ENV | 模式: $BOOT_MODE | 用户: $CUSTOM_USER"
 
 rm -rf rootdir || true
@@ -57,11 +113,15 @@ chroot rootdir apt install -y --no-install-recommends \
     wpasupplicant dbus kmod initramfs-tools
 
 if ls *.deb 1> /dev/null 2>&1; then
+    repack_firmware_deb
     cp *.deb rootdir/tmp/
-    chroot rootdir bash -c "apt install -y /tmp/*.deb || true"
-    KERNEL_MODULE_DIR=$(ls rootdir/lib/modules/ | head -n 1)
+    chroot rootdir bash -c "apt install -y /tmp/*.deb"
+    normalize_driver_layout
+    enable_driver_services
+    KERNEL_MODULE_DIR=$(find rootdir/lib/modules rootdir/usr/lib/modules -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)
+    KERNEL_MODULE_DIR=${KERNEL_MODULE_DIR##*/}
     if [ -n "$KERNEL_MODULE_DIR" ]; then
-        chroot rootdir /sbin/depmod -a "$KERNEL_MODULE_DIR" || true
+        chroot rootdir /sbin/depmod -a "$KERNEL_MODULE_DIR"
     fi
 fi
 
@@ -94,8 +154,6 @@ ln -sf /run/systemd/resolve/stub-resolv.conf rootdir/etc/resolv.conf
 mkdir -p rootdir/etc/udev/rules.d/
 printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
 
-FW_DIR="rootdir/lib/firmware/ath12k/WCN7850/hw2.0"
-if [ -f "$FW_DIR/board-2.bin" ]; then cp "$FW_DIR/board-2.bin" "$FW_DIR/board.bin"; fi
 chroot rootdir apt install -y qrtr-tools || true
 chroot rootdir systemctl enable qrtr-ns || true
 
