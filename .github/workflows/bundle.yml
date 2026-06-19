@@ -46,6 +46,7 @@ jobs:
           # 保底兼容：如果你的 sensor 独立包在其他 tag 中，尝试单独抓取
           gh release download "sheng_devauth" --pattern "*.deb" --repo "code002-2/Xiaomi-pad-6s-pro-Linux" --clobber || true
           gh release download "sensor" --pattern "*.deb" --repo "code002-2/Xiaomi-pad-6s-pro-Linux" --clobber || true
+          gh release download --pattern "xiaomi-mipps-auth_*_arm64.deb" --repo "ianchb/xiaomi-mipps-auth" --clobber
 
           echo "🚀 正在进行跨发行版路径无损格式转换..."
           # 核心修复：引入 --no-depends 阻断 Debian 依赖名称污染 Fedora/Arch 

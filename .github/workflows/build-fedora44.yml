@@ -49,6 +49,7 @@ jobs:
             "iio-sensor-proxy-*.aarch64.rpm"
             "libssc-*.aarch64.rpm"
             "sheng-sensors-*.aarch64.rpm"
+            "xiaomi-mipps-auth-*.aarch64.rpm"
           )
           for pattern in "${expected_patterns[@]}"; do
             if ! compgen -G "$pattern" > /dev/null; then
@@ -57,7 +58,7 @@ jobs:
             fi
             echo "Found Fedora driver package matching: $pattern"
           done
-          echo "All 8 Fedora driver packages were downloaded."
+          echo "All 9 Fedora driver packages were downloaded."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build RootFS

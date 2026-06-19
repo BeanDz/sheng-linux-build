@@ -88,15 +88,16 @@ jobs:
             "iio-sensor-proxy_99993.8-6_arm64.deb"
             "libssc_0.4.2-1_arm64.deb"
             "sheng-sensors_20240917-1_arm64.deb"
+            "xiaomi-mipps-auth_*_arm64.deb"
           )
-          for pkg in "${expected_packages[@]}"; do
-            if [ ! -f "$pkg" ]; then
-              echo "::error::Missing Debian driver package: $pkg"
+          for pattern in "${expected_packages[@]}"; do
+            if ! compgen -G "$pattern" > /dev/null; then
+              echo "::error::Missing Debian driver package matching: $pattern"
               exit 1
             fi
-            echo "Found Debian driver package: $pkg"
+            echo "Found Debian driver package matching: $pattern"
           done
-          echo "All 8 Debian driver packages were downloaded."
+          echo "All 9 Debian driver packages were downloaded."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build RootFS

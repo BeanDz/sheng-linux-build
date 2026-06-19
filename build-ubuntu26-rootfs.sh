@@ -3,6 +3,7 @@ set -e
 
 IMAGE_SIZE="8G"
 FILESYSTEM_UUID="ee8d3593-59b1-480e-a3b6-4fefb17ee7d8"
+LINUX_FIRMWARE_QCOM_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/qcom"
 
 UBUNTU_SUITE="resolute"
 UBUNTU_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
@@ -50,6 +51,19 @@ normalize_driver_layout() {
     if [ -f "$ath12k_dir/board-2.bin" ] && [ ! -f "$ath12k_dir/board.bin" ]; then
         cp "$ath12k_dir/board-2.bin" "$ath12k_dir/board.bin"
     fi
+}
+
+install_gpu_firmware() {
+    local fw_dir="rootdir/lib/firmware/qcom"
+    local fw_name fw_file
+
+    mkdir -p "$fw_dir"
+    for fw_name in a740_sqe.fw gmu_gen70200.bin; do
+        fw_file="$fw_dir/$fw_name"
+        if [ ! -s "$fw_file" ]; then
+            curl -L --fail -o "$fw_file" "$LINUX_FIRMWARE_QCOM_URL/$fw_name"
+        fi
+    done
 }
 
 enable_driver_services() {
@@ -142,6 +156,7 @@ if ls *.deb 1> /dev/null 2>&1; then
     cp *.deb rootdir/tmp/
     chroot rootdir bash -c "apt install -y /tmp/*.deb"
     normalize_driver_layout
+    install_gpu_firmware
     enable_driver_services
     KERNEL_MODULE_DIR=$(find rootdir/lib/modules rootdir/usr/lib/modules -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)
     KERNEL_MODULE_DIR=${KERNEL_MODULE_DIR##*/}

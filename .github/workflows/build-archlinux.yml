@@ -52,6 +52,7 @@ jobs:
             "iio-sensor-proxy-*-aarch64.pkg.tar.zst"
             "libssc-*-aarch64.pkg.tar.zst"
             "sheng-sensors-*-aarch64.pkg.tar.zst"
+            "xiaomi-mipps-auth-*-aarch64.pkg.tar.zst"
           )
           for pattern in "${expected_patterns[@]}"; do
             if ! compgen -G "$pattern" > /dev/null; then
@@ -60,7 +61,7 @@ jobs:
             fi
             echo "Found Arch driver package matching: $pattern"
           done
-          echo "All 8 Arch driver packages were downloaded."
+          echo "All 9 Arch driver packages were downloaded."
           wget -q -O mesa-common-dev_26.0.7-1_arm64.deb "http://ftp.br.debian.org/debian/pool/main/m/mesa/mesa-common-dev_26.0.8-1_arm64.deb"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

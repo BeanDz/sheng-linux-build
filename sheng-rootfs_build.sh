@@ -2,6 +2,7 @@
 set -e
 IMAGE_SIZE="8G"
 FILESYSTEM_UUID="ee8d3593-59b1-480e-a3b6-4fefb17ee7d8"
+LINUX_FIRMWARE_QCOM_URL="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/qcom"
 
 if [ $# -lt 2 ]; then exit 1; fi
 if [ "$(id -u)" -ne 0 ]; then exit 1; fi
@@ -38,6 +39,19 @@ normalize_driver_layout() {
     if [ -f "$ath12k_dir/board-2.bin" ] && [ ! -f "$ath12k_dir/board.bin" ]; then
         cp "$ath12k_dir/board-2.bin" "$ath12k_dir/board.bin"
     fi
+}
+
+install_gpu_firmware() {
+    local fw_dir="rootdir/lib/firmware/qcom"
+    local fw_name fw_file
+
+    mkdir -p "$fw_dir"
+    for fw_name in a740_sqe.fw gmu_gen70200.bin; do
+        fw_file="$fw_dir/$fw_name"
+        if [ ! -s "$fw_file" ]; then
+            curl -L --fail -o "$fw_file" "$LINUX_FIRMWARE_QCOM_URL/$fw_name"
+        fi
+    done
 }
 
 enable_driver_services() {
@@ -139,6 +153,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
             chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools kmod qrtr-tools"
             chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb"
             normalize_driver_layout
+            install_gpu_firmware
             enable_driver_services
             KERNEL_MODULE_DIR=$(find rootdir/lib/modules rootdir/usr/lib/modules -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | head -n 1)
             KERNEL_MODULE_DIR=${KERNEL_MODULE_DIR##*/}
@@ -152,7 +167,8 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
 
         chroot rootdir useradd -m -s /bin/bash "$CUSTOM_USER" || true
         chroot rootdir bash -c "echo '$CUSTOM_USER:$CUSTOM_PASS' | chpasswd"
-        chroot rootdir usermod -aG sudo,audio,video,input "$CUSTOM_USER"
+        chroot rootdir groupadd -f render
+        chroot rootdir usermod -aG sudo,audio,video,render,input "$CUSTOM_USER"
 
         if [ "$FLAVOUR" = "gnome" ]; then
             chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y gnome-shell gnome-session gnome-terminal gdm3"
