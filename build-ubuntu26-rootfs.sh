@@ -87,6 +87,30 @@ repack_firmware_deb() {
     rm -rf "$workdir"
 }
 
+repack_alsa_deb() {
+    local pkg="alsa-xiaomi-sheng.deb"
+    local workdir pkgdir savedir
+
+    [ -f "$pkg" ] || return 0
+    command -v dpkg-deb >/dev/null 2>&1 || return 0
+
+    workdir=$(mktemp -d)
+    pkgdir="$workdir/pkg"
+    savedir="$workdir/ucm2"
+    dpkg-deb -R "$pkg" "$pkgdir"
+
+    mkdir -p "$savedir/Xiaomi" "$savedir/conf.d/sm8550"
+    cp -a "$pkgdir/usr/share/alsa/ucm2/Xiaomi/sheng" "$savedir/Xiaomi/"
+    cp -a "$pkgdir/usr/share/alsa/ucm2/conf.d/sm8550/Xiaomi-Pad6SPro.conf" "$savedir/conf.d/sm8550/"
+
+    rm -rf "$pkgdir/usr/share/alsa/ucm2"
+    mkdir -p "$pkgdir/usr/share/alsa/ucm2"
+    cp -a "$savedir/." "$pkgdir/usr/share/alsa/ucm2/"
+
+    dpkg-deb -b "$pkgdir" "$pkg"
+    rm -rf "$workdir"
+}
+
 echo "开始构建 Ubuntu 26.04 | 桌面: $DESKTOP_ENV | 模式: $BOOT_MODE | 用户: $CUSTOM_USER"
 
 rm -rf rootdir || true
@@ -113,6 +137,7 @@ chroot rootdir apt install -y --no-install-recommends \
     wpasupplicant dbus kmod initramfs-tools
 
 if ls *.deb 1> /dev/null 2>&1; then
+    repack_alsa_deb
     repack_firmware_deb
     cp *.deb rootdir/tmp/
     chroot rootdir bash -c "apt install -y /tmp/*.deb"

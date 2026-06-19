@@ -75,6 +75,30 @@ repack_firmware_deb() {
     rm -rf "$workdir"
 }
 
+repack_alsa_deb() {
+    local pkg="alsa-xiaomi-sheng.deb"
+    local workdir pkgdir savedir
+
+    [ -f "$pkg" ] || return 0
+    command -v dpkg-deb >/dev/null 2>&1 || return 0
+
+    workdir=$(mktemp -d)
+    pkgdir="$workdir/pkg"
+    savedir="$workdir/ucm2"
+    dpkg-deb -R "$pkg" "$pkgdir"
+
+    mkdir -p "$savedir/Xiaomi" "$savedir/conf.d/sm8550"
+    cp -a "$pkgdir/usr/share/alsa/ucm2/Xiaomi/sheng" "$savedir/Xiaomi/"
+    cp -a "$pkgdir/usr/share/alsa/ucm2/conf.d/sm8550/Xiaomi-Pad6SPro.conf" "$savedir/conf.d/sm8550/"
+
+    rm -rf "$pkgdir/usr/share/alsa/ucm2"
+    mkdir -p "$pkgdir/usr/share/alsa/ucm2"
+    cp -a "$savedir/." "$pkgdir/usr/share/alsa/ucm2/"
+
+    dpkg-deb -b "$pkgdir" "$pkg"
+    rm -rf "$workdir"
+}
+
 cleanup_mounts() {
     fuser -k -9 -m rootdir 2>/dev/null || true
     sleep 2; umount -l rootdir/dev/pts 2>/dev/null || true
@@ -109,6 +133,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y fonts-noto-cjk fonts-wqy-microhei fcitx5 fcitx5-chinese-addons"
 
         if ls *.deb 1> /dev/null 2>&1; then
+            repack_alsa_deb
             repack_firmware_deb
             cp *.deb rootdir/tmp/
             chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools kmod qrtr-tools"
